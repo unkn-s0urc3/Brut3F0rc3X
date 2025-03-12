@@ -4,6 +4,8 @@ using System.IO;
 using System.Windows.Forms;
 using System.Threading;
 using System.Threading.Tasks;
+using WindowsInput;
+using WindowsInput.Native;
 
 namespace Brut3F0rc3X
 {
@@ -12,11 +14,13 @@ namespace Brut3F0rc3X
         private bool isBruteForceMethod = true;
         private bool isSearching = false; // Flag for controlling search process
         private List<string> dictionaryPasswords = new List<string>(); // List to store dictionary passwords
+        private InputSimulator sim; // Instance of InputSimulator to reuse
 
         public Main()
         {
             InitializeComponent();
             InitializeControls();
+            sim = new InputSimulator(); // Instantiate InputSimulator once
         }
 
         // Initialize the initial state of the controls
@@ -189,18 +193,16 @@ namespace Brut3F0rc3X
             }
         }
 
-        // Send password input to another application
+        // Send password input to another application using InputSimulator
         private void SendPassword(string password)
         {
-            Invoke((Action)(() =>
-            {
-                SendKeys.Send(password);
-                SendKeys.Send("{TAB}");
-                SendKeys.Send("{ENTER}");
-                SendKeys.Send("{ENTER}");
-                SendKeys.Send("{TAB}");
-                SendKeys.Send("{TAB}");
-            }));
+            // Using the existing instance of InputSimulator
+            sim.Keyboard.TextEntry(password); // Simulate typing the password
+            sim.Keyboard.KeyPress(VirtualKeyCode.TAB); // Press TAB
+            sim.Keyboard.KeyPress(VirtualKeyCode.RETURN); // Press ENTER
+            sim.Keyboard.KeyPress(VirtualKeyCode.RETURN); // Press ENTER again
+            sim.Keyboard.KeyPress(VirtualKeyCode.TAB); // Press TAB again
+            sim.Keyboard.KeyPress(VirtualKeyCode.TAB); // Press TAB again
         }
 
         // Complete the search process and enable the Search button again
