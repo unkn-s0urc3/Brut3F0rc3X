@@ -1,212 +1,249 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Threading.Tasks;
+using System.IO;
 using System.Windows.Forms;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Brut3F0rc3X
 {
     public partial class Main : Form
     {
-        private readonly List<CheckBox> _checkBoxes = new List<CheckBox>();
-        private readonly HashSet<string> _selectedTasks = new HashSet<string>();
-        private readonly Dictionary<string, Func<Task>> _attackMethods;
+        private bool isBruteForceMethod = true;
+        private bool isSearching = false; // Flag for controlling search process
+        private List<string> dictionaryPasswords = new List<string>(); // List to store dictionary passwords
 
         public Main()
         {
             InitializeComponent();
-            InitializeCheckBoxes();
+            InitializeControls();
+        }
 
-            _attackMethods = new Dictionary<string, Func<Task>>
+        // Initialize the initial state of the controls
+        private void InitializeControls()
+        {
+            btnSelectDictionary.Enabled = false;
+            btnSearch.Enabled = false;
+
+            txtBruteForceStart.Enabled = false;
+            txtBruteForceEnd.Enabled = false;
+            txtDictionaryPath.Enabled = false;
+        }
+
+        // Handle the Brute Force method selection
+        private void rbBruteForce_CheckedChanged(object sender, EventArgs e)
+        {
+            isBruteForceMethod = true;
+            txtBruteForceStart.Enabled = true;
+            txtBruteForceEnd.Enabled = true;
+            txtDictionaryPath.Enabled = false;
+
+            btnSelectDictionary.Enabled = false;
+            btnSearch.Enabled = true;
+        }
+
+        // Handle the Dictionary method selection
+        private void rbDictionary_CheckedChanged(object sender, EventArgs e)
+        {
+            isBruteForceMethod = false;
+            txtBruteForceStart.Enabled = false;
+            txtBruteForceEnd.Enabled = false;
+
+            btnSelectDictionary.Enabled = true;
+            btnSearch.Enabled = true;
+        }
+
+        // Open file dialog to select dictionary file
+        private void btnSelectDictionary_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog
             {
-                { "All digits same", AllDigitsSame },
-                { "Alternation", Alternation },
+                Filter = "CSV Files (*.csv)|*.csv"
             };
-        }
 
-        private void InitializeCheckBoxes()
-        {
-            _checkBoxes.AddRange(GetAllCheckBoxes(tabPage1));
-        }
-
-        private IEnumerable<CheckBox> GetAllCheckBoxes(Control parent)
-        {
-            foreach (Control control in parent.Controls)
+            if (openFileDialog.ShowDialog() == DialogResult.OK)
             {
-                if (control is CheckBox checkBox)
-                {
-                    yield return checkBox;
-                }
-                else if (control.HasChildren)
-                {
-                    foreach (var child in GetAllCheckBoxes(control))
-                    {
-                        yield return child;
-                    }
-                }
+                string selectedFilePath = openFileDialog.FileName;
+                string fileName = System.IO.Path.GetFileName(selectedFilePath);
+                txtDictionaryPath.Text = fileName;
+
+                // Load passwords from the selected file
+                LoadPasswordsFromFile(selectedFilePath);
             }
         }
 
-        private async void StartAttackButton_Click(object sender, EventArgs e)
+        // Load passwords from CSV file into the dictionary list
+        private void LoadPasswordsFromFile(string filePath)
         {
-            TextBoxLog.Clear();
-            _selectedTasks.Clear();
-
-            // Collect all selected attack methods
-            foreach (var checkBox in _checkBoxes)
+            try
             {
-                if (checkBox.Checked && checkBox.Tag is string methodName)
+                dictionaryPasswords.Clear();
+                var lines = File.ReadAllLines(filePath);
+
+                foreach (var line in lines)
                 {
-                    _selectedTasks.Add(methodName);
+                    dictionaryPasswords.Add(line.Trim());
                 }
-            }
 
-            if (_selectedTasks.Count == 0)
+                ShowMessage("Successfully loaded " + dictionaryPasswords.Count + " passwords.", MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
             {
-                MessageBox.Show("Please select at least one method!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ShowMessage("Error while loading file: " + ex.Message, MessageBoxIcon.Error);
+            }
+        }
+
+        // Show unified error or informational messages
+        private void ShowMessage(string message, MessageBoxIcon icon)
+        {
+            MessageBox.Show(message, "Information", MessageBoxButtons.OK, icon);
+        }
+
+        // Start the search process when the Search button is clicked
+        private void btnSearch_Click(object sender, EventArgs e)
+        {
+            // Check if Brute Force method and fields are not empty
+            if (isBruteForceMethod && (string.IsNullOrWhiteSpace(txtBruteForceStart.Text) || string.IsNullOrWhiteSpace(txtBruteForceEnd.Text)))
+            {
+                ShowMessage("Both 'Start' and 'End' fields must be filled.", MessageBoxIcon.Error);
                 return;
             }
 
-            foreach (var methodName in _selectedTasks)
+            // Check if Dictionary method is selected and dictionary path is empty
+            if (!isBruteForceMethod && string.IsNullOrWhiteSpace(txtDictionaryPath.Text))
             {
-                if (_attackMethods.TryGetValue(methodName, out var attack))
-                {
-                    await attack();
-                }
-                else
-                {
-                    MessageBox.Show($"Method {methodName} not found!", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                ShowMessage("Please select a dictionary file.", MessageBoxIcon.Error);
+                return;
             }
 
-            MessageBox.Show("All methods completed!", "Information", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        }
+            // Prevent multiple searches from being started
+            if (isSearching)
+                return;
 
-        private void ClearLogButton_Click(object sender, EventArgs e)
-        {
-            TextBoxLog.Clear();
-        }
+            isSearching = true;
+            btnSearch.Enabled = false; // Disable search button during search process
 
-        private void StopAttackButton_Click(object sender, EventArgs e)
-        {
-            // Add your stop logic if needed
-        }
+            // Delay before starting the search
+            Thread.Sleep(5000);
 
-        private async void RandomAttackButton_Click(object sender, EventArgs e)
-        {
-            TextBoxLog.Clear();
-            await ExecuteAttack("[Random]", async () =>
+            // Start the respective method based on selection
+            if (isBruteForceMethod)
             {
-                if (int.TryParse(TextBoxNumberOfPasswords.Text, out int numberOfPasswords))
-                {
-                    var uniquePasswords = GenerateRandomPasswords(numberOfPasswords);
-                    foreach (var password in uniquePasswords)
-                    {
-                        AppendText($"[Random] {password}\r\n");
-                    }
-                }
-                else
-                {
-                    ShowErrorMessage("Please enter a valid number of passwords!");
-                }
-            });
-        }
-
-        private IEnumerable<string> GenerateRandomPasswords(int numberOfPasswords)
-        {
-            var uniquePasswords = new HashSet<string>();
-            var random = new Random();
-
-            while (uniquePasswords.Count < numberOfPasswords)
-            {
-                string password = GenerateRandomPassword(random);
-                uniquePasswords.Add(password);
+                Task.Run(() => StartBruteForce());
             }
-
-            return uniquePasswords;
-        }
-
-        private string GenerateRandomPassword(Random random)
-        {
-            return string.Concat(Enumerable.Range(0, 7).Select(_ => random.Next(0, 10).ToString()));
-        }
-
-        private async void SubsequenceAttackButton_Click(object sender, EventArgs e)
-        {
-            TextBoxLog.Clear();
-            await ExecuteAttack("[Subsequence]", async () =>
+            else
             {
-                if (int.TryParse(TextBoxNumberOfPasswords.Text, out int numberOfPasswords))
-                {
-                    numberOfPasswords += 1000000; // Offset for subsequence attack
-                    for (int i = 1000000; i < numberOfPasswords; i++)
-                    {
-                        AppendText($"[Subsequence] {i}\r\n");
-                    }
-                }
-                else
-                {
-                    ShowErrorMessage("Please enter a valid number of passwords!");
-                }
-            });
+                Task.Run(() => StartWithDictionary());
+            }
         }
 
-        private async Task AllDigitsSame()
+        // Method for Brute Force search
+        private void StartBruteForce()
         {
-            await ExecuteAttack("[AllDigitsSame]", () =>
+            try
             {
-                for (int i = 1; i <= 9; i++)
-                {
-                    string password = new string(Convert.ToChar(i.ToString()), 7);
-                    AppendText($"[AllDigitsSame] {password}\r\n");
-                }
-            });
-        }
+                int startValue = int.Parse(txtBruteForceStart.Text);
+                int endValue = int.Parse(txtBruteForceEnd.Text);
 
-        private async Task Alternation()
-        {
-            await ExecuteAttack("[Alternation]", () =>
+                // Loop through all possible password combinations
+                for (int i = startValue; i <= endValue; i++)
+                {
+                    SendPassword(i.ToString()); // Send the password
+                    Thread.Sleep(100); // Delay between attempts
+                }
+            }
+            catch (Exception ex)
             {
-                for (int firstDigit = 1; firstDigit <= 9; firstDigit++)
-                {
-                    for (int secondDigit = 0; secondDigit <= 9; secondDigit++)
-                    {
-                        if (firstDigit == secondDigit) continue;
-
-                        string password = string.Concat(Enumerable.Range(0, 7).Select(i => (i % 2 == 0 ? firstDigit : secondDigit).ToString()));
-                        AppendText($"[Alternation] {password}\r\n");
-                    }
-                }
-            });
+                ShowMessage("Error during Brute Force search: " + ex.Message, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                CompleteSearch();
+            }
         }
 
-        private async Task ExecuteAttack(string attackName, Action action)
+        // Method for searching with dictionary passwords
+        private void StartWithDictionary()
         {
-            Stopwatch stopwatch = new Stopwatch();
-            stopwatch.Start();
+            try
+            {
+                if (dictionaryPasswords.Count == 0)
+                {
+                    ShowMessage("Dictionary is empty. Please load a valid file.", MessageBoxIcon.Error);
+                    return;
+                }
 
-            Invoke((Action)(() => TextBoxLog.AppendText($"{attackName} Started\r\n")));
+                // Loop through dictionary passwords
+                foreach (var password in dictionaryPasswords)
+                {
+                    SendPassword(password); // Send the password
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowMessage("Error during Dictionary search: " + ex.Message, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                CompleteSearch();
+            }
+        }
 
-            await Task.Run(action);
-
-            stopwatch.Stop();
-            Invoke((Action)(() => TextBoxLog.AppendText($"{attackName} Finished!\r\n")));
-
+        // Send password input to another application
+        private void SendPassword(string password)
+        {
             Invoke((Action)(() =>
             {
-                LabelTime.Text = $"Time: {stopwatch.Elapsed:hh\\:mm\\:ss\\.fff}";
+                SendKeys.Send(password);
+                SendKeys.Send("{TAB}");
+                SendKeys.Send("{ENTER}");
+                SendKeys.Send("{ENTER}");
+                SendKeys.Send("{TAB}");
+                SendKeys.Send("{TAB}");
             }));
         }
 
-        private void AppendText(string text)
+        // Complete the search process and enable the Search button again
+        private void CompleteSearch()
         {
-            Invoke((Action)(() => TextBoxLog.AppendText(text)));
+            isSearching = false;
+            Invoke((Action)(() =>
+            {
+                btnSearch.Enabled = true; // Enable the search button
+            }));
         }
 
-        private void ShowErrorMessage(string message)
+        // Validate input to allow only digits, no leading zeros, and restrict to 7 digits
+        private void ValidateInput(KeyPressEventArgs e, TextBox sender)
         {
-            MessageBox.Show(message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (!char.IsDigit(e.KeyChar) && e.KeyChar != (char)Keys.Back)
+            {
+                e.Handled = true;
+            }
+
+            // Prevent leading zeroes
+            if (sender.Text.Length == 0 && e.KeyChar == '0')
+            {
+                e.Handled = true;
+            }
+
+            // Restrict the number of digits to 7
+            if (sender.Text.Length >= 7 && e.KeyChar != (char)Keys.Back)
+            {
+                e.Handled = true;
+            }
+        }
+
+        // Handle the 'Start' field key press event
+        private void txtBruteForceStart_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            ValidateInput(e, txtBruteForceStart);
+        }
+
+        // Handle the 'End' field key press event
+        private void txtBruteForceEnd_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            ValidateInput(e, txtBruteForceEnd);
         }
     }
 }
